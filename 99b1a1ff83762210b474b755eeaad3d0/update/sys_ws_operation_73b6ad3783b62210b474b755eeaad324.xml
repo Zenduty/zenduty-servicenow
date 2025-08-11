@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ws_operation">
+    <sys_ws_operation action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <consumes>application/json,application/xml,text/xml</consumes>
+        <consumes_customized>false</consumes_customized>
+        <default_operation_uri/>
+        <enforce_acl>cf9d01d3e73003009d6247e603f6a990</enforce_acl>
+        <http_method>POST</http_method>
+        <name>Update Integration in CI</name>
+        <operation_script><![CDATA[(function process(/*RESTAPIRequest*/ request, /*RESTAPIResponse*/ response) {
+
+    var body = request.body.data;
+	var zendutyIntegration = body.zenduty_integration;
+    var configurationItemId = body.configuration_item_id;
+    var configurationItemName = body.configuration_item_name;
+    var assignmentGroupId = body.assignment_group_id;
+    var assignmentGroupName = body.assignment_group_name;
+    var statuses = body.statuses;
+	var highUrgencySync = body.high_urgency_sync;
+	var lowUrgencySync = body.low_urgency_sync;
+	var action = body.action;
+	var previousConfigurationItemId = body.previous_configuration_item_unique_id;
+	var ciPresent = false;
+	var agPresent = false;
+
+	if (!action) {
+        return errorResponse("Invalid payload action is missing");
+    }
+
+	if (!zendutyIntegration) {
+        return errorResponse("Invalid payload zenduty integration is missing");
+    }
+
+    if (configurationItemId) {
+		ciPresent = true;
+    }
+
+    if (assignmentGroupId) {
+        agPresent = true;
+    }
+
+	if (!ciPresent && !agPresent){
+		return errorResponse("Invalid payload either assignment group or configuration item is required");
+	}
+
+    if (!Array.isArray(statuses) || statuses.length === 0) {
+        return errorResponse("Statuses must be a non-empty list of {id, name} pairs.");
+    }
+
+	if (!highUrgencySync || !highUrgencySync.sys_id || !highUrgencySync.name) {
+            return errorResponse("Invalid high urgency sync");
+        }
+	
+	if (!lowUrgencySync || !lowUrgencySync.sys_id || !lowUrgencySync.name) {
+            return errorResponse("Invalid low urgency sync");
+        }
+
+    // === CI Validation ===
+	if (ciPresent){
+		var ciGR = new GlideRecord('cmdb_ci');
+		ciGR.addQuery('sys_id', configurationItemId);
+		ciGR.addQuery('name', configurationItemName);
+		ciGR.query();
+		if (!ciGR.next()) {
+			return errorResponse("Invalid Configuration Item: no matching record.");
+		}
+	}
+    
+
+    // === Assignment Group Validation ===
+	if (agPresent){
+		var agGR = new GlideRecord('sys_user_group');
+		agGR.addQuery('sys_id', assignmentGroupId);
+		agGR.addQuery('name', assignmentGroupName);
+		agGR.query();
+		if (!agGR.next()) {
+			return errorResponse("Invalid Assignment Group: no matching record.");
+		}
+	}
+    
+    // === Statuses Validation ===
+    for (var i = 0; i < statuses.length; i++) {
+        var status = statuses[i];
+        if (!status.sys_id || !status.name) {
+            return errorResponse("Each status must include both sys_id and 'name'.");
+        }
+
+        var statusGR = new GlideRecord('sys_choice');
+        statusGR.addQuery('name', 'incident');  // For incident table
+        statusGR.addQuery('element', 'state');  // For state field
+		statusGR.addQuery('sys_id', status.sys_id);
+        statusGR.addQuery('label', status.name);
+        statusGR.query();
+
+        if (!statusGR.next()) {
+            return errorResponse("Invalid status: No match for sys_id '" + status.sys_id + "' and name '" + status.name + "'.");
+        }
+    }
+
+	// === Urgency Validation ===
+	gs.info("highUrgencySync.sys_id: " + highUrgencySync.sys_id);
+	gs.info("highUrgencySync.name: " + highUrgencySync.name);
+	gs.info("lowUrgencySync.sys_id: " + lowUrgencySync.sys_id);
+	gs.info("lowUrgencySync.name: " + lowUrgencySync.name);
+    var highUrgencyGR = new GlideRecord('sys_choice');
+	highUrgencyGR.addQuery('name', 'task');  // Table name
+	highUrgencyGR.addQuery('element', 'urgency');  // Field name
+	highUrgencyGR.addQuery('sys_id', highUrgencySync.sys_id);
+	highUrgencyGR.addQuery('label', highUrgencySync.name);
+	highUrgencyGR.query();
+
+	if (!highUrgencyGR.next()) {
+		return errorResponse("Invalid high Urgency: No match found for value '" + highUrgencySync.sys_id + "' and label '" + highUrgencySync.name + "'.");
+	}
+
+	var lowUrgencyGR = new GlideRecord('sys_choice');
+	lowUrgencyGR.addQuery('name', 'task');  // Table name
+	lowUrgencyGR.addQuery('element', 'urgency');  // Field name
+	lowUrgencyGR.addQuery('sys_id', lowUrgencySync.sys_id);
+	lowUrgencyGR.addQuery('label', lowUrgencySync.name);
+	lowUrgencyGR.query();
+
+	if (!lowUrgencyGR.next()) {
+		return errorResponse("Invalid high Urgency: No match found for value '" + lowUrgencySync.sys_id + "' and label '" + lowUrgencySync.name + "'.");
+	}
+
+	// === Unmap Zenduty Integration from Previous Configuration Item ===
+	if (previousConfigurationItemId){
+		if (action === "update") {
+			var previousCIGR = new GlideRecord('cmdb_ci');
+			previousCIGR.addQuery('sys_id', previousConfigurationItemId);
+			previousCIGR.query();
+
+			if (previousCIGR.next()) {
+				previousCIGR.u_zenduty_integration = ''; // Clear the custom field
+				previousCIGR.update();
+			}
+		}
+	}
+	
+
+	// === Mapping to Custom Fields ===
+	if (ciPresent){
+		try {
+			// Update Configuration Item with Service UID
+			ciGR.u_zenduty_integration = zendutyIntegration;
+			ciGR.update();
+
+		} catch (e) {
+			return errorResponse("Mapping failed: " + e.message);
+		}
+	}
+    
+    // ✅ All Passed
+    response.setStatus(200);
+    response.setBody({
+        success: true,
+        message: "Validation successful."
+    });
+
+    function errorResponse(msg) {
+        response.setStatus(400);
+        response.setBody({ success: false, error: msg });
+        return;
+    }
+
+})(request, response);
+]]></operation_script>
+        <operation_uri>/api/x_1072151_zenduty/zenduty_integrations/update_integration_in_ci</operation_uri>
+        <produces>application/json,application/xml,text/xml</produces>
+        <produces_customized>false</produces_customized>
+        <relative_path>/update_integration_in_ci</relative_path>
+        <request_example/>
+        <requires_acl_authorization>true</requires_acl_authorization>
+        <requires_authentication>true</requires_authentication>
+        <requires_snc_internal_role>true</requires_snc_internal_role>
+        <short_description/>
+        <sys_class_name>sys_ws_operation</sys_class_name>
+        <sys_created_by>admin</sys_created_by>
+        <sys_created_on>2025-07-24 12:49:20</sys_created_on>
+        <sys_id>73b6ad3783b62210b474b755eeaad324</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Update Integration in CI</sys_name>
+        <sys_package display_value="Zenduty" source="x_1072151_zenduty">99b1a1ff83762210b474b755eeaad3d0</sys_package>
+        <sys_policy>protected</sys_policy>
+        <sys_scope display_value="Zenduty">99b1a1ff83762210b474b755eeaad3d0</sys_scope>
+        <sys_update_name>sys_ws_operation_73b6ad3783b62210b474b755eeaad324</sys_update_name>
+        <sys_updated_by>admin</sys_updated_by>
+        <sys_updated_on>2025-07-24 12:49:20</sys_updated_on>
+        <web_service_definition display_value="Zenduty Integrations">1046e93783b62210b474b755eeaad310</web_service_definition>
+        <web_service_version/>
+    </sys_ws_operation>
+</record_update>

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ws_operation">
+    <sys_ws_operation action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <consumes>application/json,application/xml,text/xml</consumes>
+        <consumes_customized>false</consumes_customized>
+        <default_operation_uri/>
+        <enforce_acl>cf9d01d3e73003009d6247e603f6a990</enforce_acl>
+        <http_method>GET</http_method>
+        <name>Fetch Integration Data</name>
+        <operation_script><![CDATA[(function process(/*RESTAPIRequest*/ request, /*RESTAPIResponse*/ response) {
+    var result = {
+        status: "success",
+        states: [],
+        groups: [],
+        configuration_items: [],
+		urgencies: [],
+		incident_fields: []
+    };
+
+    try {
+        // 1️⃣ Fetch Incident States
+        var stateGR = new GlideRecord('sys_choice');
+        stateGR.addQuery('name', 'incident');
+        stateGR.addQuery('element', 'state');
+		stateGR.query();
+        while (stateGR.next()) {
+            result.states.push({
+                label: stateGR.label.toString(),
+                value: stateGR.value.toString(),
+                sys_id: stateGR.sys_id.toString()
+            });
+        }
+
+        // 2️⃣ Fetch Assignment Groups
+        var groupGR = new GlideRecord('sys_user_group');
+		groupGR.query();
+        while (groupGR.next()) {
+            result.groups.push({
+                name: groupGR.name.toString(),
+                sys_id: groupGR.sys_id.toString()
+            });
+        }
+
+        // 3️⃣ Fetch Configuration Items
+        var ciGR = new GlideRecord('cmdb_ci');
+		ciGR.query();
+        while (ciGR.next()) {
+            result.configuration_items.push({
+                name: ciGR.name.toString(),
+                sys_id: ciGR.sys_id.toString(),
+                class: ciGR.sys_class_name.toString()
+            });
+        }
+
+		// Fetch Incident Urgency
+        var urgencyGR = new GlideRecord('sys_choice');
+        urgencyGR.addQuery('name', 'task');
+        urgencyGR.addQuery('element', 'urgency');
+		urgencyGR.query();
+        while (urgencyGR.next()) {
+            result.urgencies.push({
+                label: urgencyGR.label.toString(),
+                value: urgencyGR.value.toString(),
+                sys_id: urgencyGR.sys_id.toString()
+            });
+        }
+
+		// 5️⃣ Fetch All Incident Fields
+        var addedFields = {};
+
+		var tables = ['task', 'incident']; // 'task' first so child fields can override if needed
+		for (var i = 0; i < tables.length; i++) {
+			var dictGR = new GlideRecord('sys_dictionary');
+			dictGR.addQuery('name', tables[i]);
+			dictGR.addQuery('internal_type', '!=', 'collection'); // Skip form sections
+			dictGR.query();
+
+			while (dictGR.next()) {
+				var fieldName = dictGR.element.toString();
+				if (!addedFields[fieldName]) {
+					result.incident_fields.push({
+						name: fieldName,
+						label: dictGR.getDisplayValue('column_label'),
+					});
+					addedFields[fieldName] = true;
+				}
+			}
+		}
+
+
+        response.setStatus(200);
+        return result;
+
+    } catch (e) {
+        response.setStatus(400); // Bad Request
+        return {
+            status: "error",
+            message: e.message || "Unexpected error occurred while processing the request."
+        };
+    }
+
+})(request, response);
+]]></operation_script>
+        <operation_uri>/api/x_1072151_zenduty/zenduty_integrations/fetch_integration_data</operation_uri>
+        <produces>application/json,application/xml,text/xml</produces>
+        <produces_customized>false</produces_customized>
+        <relative_path>/fetch_integration_data</relative_path>
+        <request_example/>
+        <requires_acl_authorization>true</requires_acl_authorization>
+        <requires_authentication>true</requires_authentication>
+        <requires_snc_internal_role>true</requires_snc_internal_role>
+        <short_description/>
+        <sys_class_name>sys_ws_operation</sys_class_name>
+        <sys_created_by>admin</sys_created_by>
+        <sys_created_on>2025-07-24 12:47:43</sys_created_on>
+        <sys_id>8866a57783b62210b474b755eeaad3f7</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Fetch Integration Data</sys_name>
+        <sys_package display_value="Zenduty" source="x_1072151_zenduty">99b1a1ff83762210b474b755eeaad3d0</sys_package>
+        <sys_policy>protected</sys_policy>
+        <sys_scope display_value="Zenduty">99b1a1ff83762210b474b755eeaad3d0</sys_scope>
+        <sys_update_name>sys_ws_operation_8866a57783b62210b474b755eeaad3f7</sys_update_name>
+        <sys_updated_by>admin</sys_updated_by>
+        <sys_updated_on>2025-07-24 12:47:43</sys_updated_on>
+        <web_service_definition display_value="Zenduty Integrations">1046e93783b62210b474b755eeaad310</web_service_definition>
+        <web_service_version/>
+    </sys_ws_operation>
+</record_update>

@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ws_operation">
+    <sys_ws_operation action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <consumes>application/json,application/xml,text/xml</consumes>
+        <consumes_customized>false</consumes_customized>
+        <default_operation_uri/>
+        <enforce_acl>cf9d01d3e73003009d6247e603f6a990</enforce_acl>
+        <http_method>POST</http_method>
+        <name>Create Incident</name>
+        <operation_script><![CDATA[(function process(/*RESTAPIRequest*/ request, /*RESTAPIResponse*/ response) {
+
+    try {
+        var body = request.body.data;
+		var agPresent = false;
+		var ciPresent = false;
+
+        // Basic validation
+        if (!body || !body.short_description || !body.u_originated_from || !body.zenduty_incident || !body.urgency || !body.mandatory_fields) {
+            response.setStatus(400);
+            return {
+                status: "error",
+                message: "Missing required fields: short_description or u_originated_from or zenduty_incident or urgency or mandatory_fields"
+            };
+        }
+
+		if (!body.assignment_group && !body.configuration_item ){
+			response.setStatus(400);
+            return {
+                status: "error",
+                message: "Missing required fields: either assignment group or configuration item is required"
+            };
+		}
+
+		// Get urgency by sys_id
+		var urgencyGR = new GlideRecord('sys_choice');
+		urgencyGR.addQuery('name', 'task');
+		urgencyGR.addQuery('element', 'urgency');
+		urgencyGR.addQuery('sys_id', body.urgency);
+		urgencyGR.query();
+		if (!urgencyGR.next()) {
+            response.setStatus(404);
+            return {
+                status: "error",
+                message: "Incident urgency not found with sys_id: " + body.urgency
+            };
+        }
+
+		// Get priority by sys_id
+		var snowPriority = null;
+		if (body.priority){
+			var priorityGR = new GlideRecord('sys_choice');
+			priorityGR.addQuery('sys_id', body.priority);
+			priorityGR.query();
+			if (priorityGR.next()) {
+				snowPriority = priorityGR.value;
+			}
+		}
+		
+
+        // Create new Incident
+        var incident = new GlideRecord('incident');
+        incident.initialize();
+        incident.short_description = body.short_description;
+        incident.description = body.description;
+		incident.u_originated_from = body.u_originated_from;
+		incident.u_zenduty_incident = body.zenduty_incident;
+		incident.urgency = urgencyGR.value;
+
+		if (snowPriority){
+			incident.priority = snowPriority;
+		}
+
+		if (body.assignment_group){
+			incident.assignment_group = body.assignment_group;
+		}
+		
+		if (body.configuration_item){
+			incident.cmdb_ci = body.configuration_item;
+		}
+
+		var oauthUser = gs.getUser();  // This returns the GlideUser object for the OAuth user
+		var oauthUserId = oauthUser.getID();  // sys_id of the user making the call
+
+		incident.caller_id = oauthUserId;  // Set caller_id field
+
+		// set mandatory fields
+		for(let field in body.mandatory_fields){
+			let value = body.mandatory_fields[field];
+			incident.setValue(field, value);
+		}
+		
+        // Add more optional fields as needed
+        var sysId = incident.insert();
+
+		gs.info("Incident created successfully");
+        response.setStatus(201);
+        return {
+            status: "success",
+            message: "Incident created",
+            sys_id: sysId,
+            number: incident.number.toString()
+        };
+
+    } catch (err) {
+		gs.info("Incident not created successfully error: " + err.message);
+        response.setStatus(400);
+        return {
+            status: "error",
+            message: "Failed to create incident",
+            details: err.message
+        };
+    }
+
+})(request, response);
+]]></operation_script>
+        <operation_uri>/api/x_1072151_zenduty/zenduty_alerts/create_incident</operation_uri>
+        <produces>application/json,application/xml,text/xml</produces>
+        <produces_customized>false</produces_customized>
+        <relative_path>/create_incident</relative_path>
+        <request_example/>
+        <requires_acl_authorization>true</requires_acl_authorization>
+        <requires_authentication>true</requires_authentication>
+        <requires_snc_internal_role>true</requires_snc_internal_role>
+        <short_description/>
+        <sys_class_name>sys_ws_operation</sys_class_name>
+        <sys_created_by>admin</sys_created_by>
+        <sys_created_on>2025-07-24 12:37:53</sys_created_on>
+        <sys_id>2914e5b383b62210b474b755eeaad343</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Create Incident</sys_name>
+        <sys_package display_value="Zenduty" source="x_1072151_zenduty">99b1a1ff83762210b474b755eeaad3d0</sys_package>
+        <sys_policy>protected</sys_policy>
+        <sys_scope display_value="Zenduty">99b1a1ff83762210b474b755eeaad3d0</sys_scope>
+        <sys_update_name>sys_ws_operation_2914e5b383b62210b474b755eeaad343</sys_update_name>
+        <sys_updated_by>admin</sys_updated_by>
+        <sys_updated_on>2025-07-24 12:37:53</sys_updated_on>
+        <web_service_definition display_value="Zenduty Alerts">ecf325b383b62210b474b755eeaad362</web_service_definition>
+        <web_service_version/>
+    </sys_ws_operation>
+</record_update>
